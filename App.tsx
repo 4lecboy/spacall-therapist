@@ -4,12 +4,36 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import * as Location from 'expo-location';
+import { Linking, Platform } from 'react-native';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  const openMaps = (lat: number, lng: number) => {
+    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
+    const latLng = `${lat},${lng}`;
+    const label = 'Client Location';
+    const url = Platform.select({
+      ios: `${scheme}${label}@${latLng}`,
+      android: `${scheme}${latLng}(${label})`
+    });
+    Linking.openURL(url!);
+  };
+
+  async function completeJob(bookingId: string) {
+    const { error } = await supabase
+      .from('bookings')
+      .update({ status: 'COMPLETED' }) // Marks the job done
+      .eq('id', bookingId);
+
+    if (!error) {
+      Alert.alert('Job Done!', 'Money added to your wallet.');
+      fetchJobs(); // Clear the list
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session));
@@ -101,15 +125,34 @@ export default function App() {
             renderItem={({ item }) => (
               <View style={styles.card}>
                 <Text style={styles.serviceName}>{item.service_type}</Text>
-                <Text>Price: ₱{item.total_price}</Text>
-                <Text style={styles.address}>Loc: {item.location?.address || 'Unknown'}</Text>
+                <Text>Status: {item.status}</Text>
                 
-                <TouchableOpacity 
-                  style={styles.acceptButton}
-                  onPress={() => acceptJob(item.id)}
-                >
-                  <Text style={styles.acceptText}>ACCEPT JOB</Text>
-                </TouchableOpacity>
+                {/* IF JOB IS NEW (PENDING) */}
+                {item.status === 'PENDING' && (
+                  <TouchableOpacity style={styles.acceptButton} onPress={() => acceptJob(item.id)}>
+                    <Text style={styles.acceptText}>ACCEPT JOB</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* IF JOB IS ACCEPTED (By Me) */}
+                {item.status === 'ACCEPTED' && item.therapist_id === session?.user.id && (
+                  <View>
+                    <TouchableOpacity 
+                      style={[styles.acceptButton, {backgroundColor: 'blue'}]}
+                      // Use optional chaining because location might be null
+                      onPress={() => openMaps(item.location?.latitude, item.location?.longitude)}
+                    >
+                      <Text style={styles.acceptText}>NAVIGATE (MAPS)</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                      style={[styles.acceptButton, {backgroundColor: 'black', marginTop: 10}]}
+                      onPress={() => completeJob(item.id)}
+                    >
+                      <Text style={styles.acceptText}>COMPLETE JOB</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
             ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20 }}>No jobs available.</Text>}

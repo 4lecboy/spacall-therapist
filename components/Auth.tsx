@@ -1,5 +1,17 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, TextInput, Button, Text, Alert, ActivityIndicator, Keyboard } from 'react-native';
+import {
+  StyleSheet,
+  View,
+  TextInput,
+  Button,
+  Text,
+  Alert,
+  ActivityIndicator,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { supabase } from '../lib/supabase';
 
 export default function Auth() {
@@ -9,6 +21,7 @@ export default function Auth() {
 
   // Function to Login
   async function signInWithEmail() {
+    Keyboard.dismiss();
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: email,
@@ -60,39 +73,50 @@ export default function Auth() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Spacall</Text>
-      
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          secureTextEntry={true}
-          autoCapitalize="none"
-          value={password}
-          onChangeText={setPassword}
-        />
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+        <View style={styles.container}>
+          <Text style={styles.header}>Spacall</Text>
 
-      <View style={styles.buttonContainer}>
-        {loading ? (
-          <ActivityIndicator color="#0000ff" />
-        ) : (
-          <>
-            <Button title="Sign In" onPress={signInWithEmail} />
-            <View style={styles.spacer} />
-            <Button title="Create Account" color="#841584" onPress={signUpWithEmail} />
-          </>
-        )}
-      </View>
-    </View>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              returnKeyType="next"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              secureTextEntry={true}
+              autoCapitalize="none"
+              value={password}
+              onChangeText={setPassword}
+              returnKeyType="done"
+              onSubmitEditing={signInWithEmail}
+            />
+          </View>
+
+          <View style={styles.buttonContainer}>
+            {loading ? (
+              <ActivityIndicator color="#0000ff" />
+            ) : (
+              <>
+                <Button title="Sign In" onPress={signInWithEmail} />
+                <View style={styles.spacer} />
+                <Button title="Create Account" color="#841584" onPress={signUpWithEmail} />
+              </>
+            )}
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
