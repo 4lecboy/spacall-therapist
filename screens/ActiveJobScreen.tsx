@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { startLocationTracking, stopLocationTracking } from '../lib/locationService';
 import { COLORS, SIZES, SHADOWS } from '../constants/theme';
 import ScreenWrapper from '../components/ScreenWrapper';
 import CustomText from '../components/CustomText';
@@ -14,6 +15,7 @@ interface Props {
 export default function ActiveJobScreen({ job, onComplete }: Props) {
   const [status, setStatus] = useState(job.status);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
 
   // 1. Timer Logic (Robust)
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function ActiveJobScreen({ job, onComplete }: Props) {
     if (status === 'IN_SESSION' && job.started_at) {
       // Calculate seconds between NOW and WHEN WE STARTED
       const startTime = new Date(job.started_at).getTime();
-      
+
       const updateTimer = () => {
         const now = new Date().getTime();
         const diff = Math.floor((now - startTime) / 1000);
@@ -36,7 +38,39 @@ export default function ActiveJobScreen({ job, onComplete }: Props) {
     return () => clearInterval(interval);
   }, [status, job.started_at]);
 
-  // 2. Helper: Open Maps
+  // 2. Location Tracking Logic - Start when ACCEPTED, stop when COMPLETED
+  useEffect(() => {
+    const handleLocationTracking = async () => {
+      // Start tracking when status is ACCEPTED or ON_WAY or ARRIVED
+      if (['ACCEPTED', 'ON_WAY', 'ARRIVED'].includes(status) && !isTrackingLocation) {
+        console.log('🚀 Starting location tracking for booking:', job.id);
+        const started = await startLocationTracking({
+          bookingId: job.id,
+          updateIntervalSeconds: 10, // Update every 10 seconds
+        });
+        if (started) {
+          setIsTrackingLocation(true);
+        }
+      }
+      // Stop tracking when session starts or job completes
+      else if (['IN_SESSION', 'COMPLETED'].includes(status) && isTrackingLocation) {
+        console.log('🛑 Stopping location tracking');
+        await stopLocationTracking(job.id);
+        setIsTrackingLocation(false);
+      }
+    };
+
+    handleLocationTracking();
+
+    // Cleanup on unmount
+    return () => {
+      if (isTrackingLocation) {
+        stopLocationTracking(job.id);
+      }
+    };
+  }, [status, job.id]);
+
+  // 3. Helper: Open Maps
   const openMaps = () => {
     const lat = job.location?.latitude;
     const lng = job.location?.longitude;
@@ -94,8 +128,8 @@ export default function ActiveJobScreen({ job, onComplete }: Props) {
           <CustomText variant="body" color={COLORS.muted}>{job.location?.address || 'Unknown Address'}</CustomText>
         </View>
         <View style={styles.priceTag}>
-           <CustomText variant="h3" color={COLORS.primary}>₱{job.total_price}</CustomText>
-           <CustomText variant="caption" style={{textAlign: 'center'}}>{job.payment_method}</CustomText>
+          <CustomText variant="h3" color={COLORS.primary}>₱{job.total_price}</CustomText>
+          <CustomText variant="caption" style={{ textAlign: 'center' }}>{job.payment_method}</CustomText>
         </View>
       </View>
 
@@ -103,13 +137,48 @@ export default function ActiveJobScreen({ job, onComplete }: Props) {
 
       {/* BODY: Dynamic Content based on Status */}
       <View style={styles.content}>
-        
+
         {/* PHASE 1: TRAVEL */}
         {status === 'ACCEPTED' && (
           <View style={{ alignItems: 'center' }}>
             <Ionicons name="car-sport-outline" size={80} color={COLORS.secondary} />
             <CustomText variant="h3" style={{ marginTop: 20 }}>Travel to Client</CustomText>
-            
+
+            {isTrackingLocation && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success, marginRight: 6 }} />
+                <CustomText variant="caption" color={COLORS.success}>
+                  Location tracking active
+                </CustomText>
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.secondaryBtn} onPress={openMaps}>
+              <Ionicons name="map" size={20} color={COLORS.primary} />
+              <CustomText variant="h3" color={COLORS.primary} style={{ marginLeft: 10 }}>Open Maps</CustomText>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.mainBtn} onPress={() => updateStatus('ON_WAY')}>
+              <CustomText variant="h3" color={COLORS.white}>I'm On My Way</CustomText>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* PHASE 1.5: ON_WAY */}
+        {status === 'ON_WAY' && (
+          <View style={{ alignItems: 'center' }}>
+            <Ionicons name="navigate-outline" size={80} color={COLORS.secondary} />
+            <CustomText variant="h3" style={{ marginTop: 20 }}>En Route to Client</CustomText>
+
+            {isTrackingLocation && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.success, marginRight: 6 }} />
+                <CustomText variant="caption" color={COLORS.success}>
+                  Client can track your location
+                </CustomText>
+              </View>
+            )}
+
             <TouchableOpacity style={styles.secondaryBtn} onPress={openMaps}>
               <Ionicons name="map" size={20} color={COLORS.primary} />
               <CustomText variant="h3" color={COLORS.primary} style={{ marginLeft: 10 }}>Open Maps</CustomText>
@@ -128,7 +197,7 @@ export default function ActiveJobScreen({ job, onComplete }: Props) {
             <CustomText variant="h3" style={{ marginTop: 20, textAlign: 'center' }}>
               You are at the location.{'\n'}Prepare for session.
             </CustomText>
-            
+
             <TouchableOpacity style={[styles.mainBtn, { backgroundColor: COLORS.success }]} onPress={() => updateStatus('IN_SESSION')}>
               <CustomText variant="h3" color={COLORS.white}>START TIMER</CustomText>
             </TouchableOpacity>
@@ -142,10 +211,10 @@ export default function ActiveJobScreen({ job, onComplete }: Props) {
             <CustomText style={{ fontSize: 60, fontFamily: 'Lato_700Bold', color: COLORS.secondary }}>
               {formatTime(elapsedSeconds)}
             </CustomText>
-            
+
             <View style={{ marginTop: 50, width: '100%' }}>
-              <TouchableOpacity 
-                style={[styles.mainBtn, { backgroundColor: COLORS.secondary }]} 
+              <TouchableOpacity
+                style={[styles.mainBtn, { backgroundColor: COLORS.secondary }]}
                 onPress={() => Alert.alert('Finish?', 'Are you sure the session is done?', [
                   { text: 'Cancel' },
                   { text: 'Yes, Complete', onPress: () => updateStatus('COMPLETED') }
@@ -179,7 +248,7 @@ const styles = StyleSheet.create({
   },
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 30 },
   content: { flex: 1, justifyContent: 'center' },
-  
+
   mainBtn: {
     backgroundColor: COLORS.primary,
     width: '100%',
